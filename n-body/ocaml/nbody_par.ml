@@ -1,42 +1,14 @@
+open Barrier
 let pi = 3.141592653589793
 let solar_mass = 4. *. pi *. pi
 let days_per_year = 365.24
-let ctr= Atomic.make 0 
-let arr = Array.make 1 (Some (Domain.self ())) 
-let jn=Atomic.make false
+
 
 type planet = { mutable x : float;  mutable y : float;  mutable z : float;
                 mutable vx: float;  mutable vy: float;  mutable vz: float;
                 mass : float }
-(* type barrier = { } *)
 
-let barrier nt =
-    Domain.Sync.critical_section (fun () ->
-    if Atomic.get ctr = nt-1 then
-    begin
-      for i=0 to nt-2 do
-        match arr.(i) with
-        | Some a-> Domain.Sync.notify a
-        | None -> ()
-        
-      done;
-      Atomic.set ctr 0;
-    end
-      
-    else 
-      begin
-        match arr.(Atomic.get ctr) with
-        | Some a-> arr.(Atomic.get ctr)<- Some (Domain.self ())
-        | None -> ();
-        (* arr.(Atomic.get ctr)<- Domain.self (); *)
-        Atomic.incr ctr;
-        Domain.Sync.wait (); 
-      end 
-    )
-
-
-
-let advance bodies dt st ed nt =
+let advance bodies dt st ed nt mybar =
   (* let n = Array.length bodies - 1 in *)
   for i = st to ed do
     let b = bodies.(i) in
@@ -56,7 +28,7 @@ let advance bodies dt st ed nt =
       b'.vz <- b'.vz +. dz *. b.mass *. mag; *)
     done
   done;
-  barrier nt;
+  (* barrier mybar; *)
   for i = st to ed do
     let b = bodies.(i) in
     b.x <- b.x +. dt *. b.vx;
@@ -64,10 +36,11 @@ let advance bodies dt st ed nt =
     b.z <- b.z +. dt *. b.vz;
   done
 
-let aux bodies dt nt =
+let aux bodies dt nt  =
   let n = Array.length bodies - 1 in
-  let f1 = Domain.spawn(fun () -> advance bodies dt   0     (n/2)  nt )  and 
-  f2 = Domain.spawn(fun () -> advance bodies dt  (n/2+1)   n  nt ) in
+  let mybar=Barrier.create_bar () in
+  let f1 = Domain.spawn(fun () -> advance bodies dt   0     (n/2)  nt  mybar )  and 
+  f2 = Domain.spawn(fun () -> advance bodies dt  (n/2+1)   n  nt  mybar) in
   Domain.join f1; Domain.join f2
 
 let energy bodies =
@@ -141,5 +114,4 @@ let () =
   for i = 1 to n do 
     aux bodies 0.01 nt 
   done;
-
   Printf.printf "%.9f\n" (energy bodies)
